@@ -1,0 +1,10 @@
+task: crafter_reward
+seed: 7
+run:
+  steps: 1000
+agent:
+  dyn:
+    rssm:
+      deter: 4096
+      classes: 32
+
