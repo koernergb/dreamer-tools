@@ -2,10 +2,11 @@
 
 Inspect a trained Dreamer world model and visualize its dreams in minutes.
 
-`dreamer-tools` is a thin, read-only toolkit for discovering and diagnosing
-DreamerV3 run directories. Version 0.1 deliberately does **not** train models,
-implement Dreamer, download checkpoints, or claim that a discovered checkpoint
-can be restored. The initially supported upstream revision is experimental.
+`dreamer-tools` is a thin toolkit for discovering and diagnosing DreamerV3 run
+directories. It does **not** train models, implement Dreamer, or download
+checkpoints. Inspection is read-only; opt-in load and evaluation commands
+delegate execution to a separately installed, pinned upstream checkout. The
+initially supported upstream revision is experimental.
 
 ## Install
 
@@ -22,6 +23,7 @@ dreamer doctor /path/to/run
 dreamer manifest /path/to/run --output dreamer-run.yaml
 dreamer manifest /path/to/run --dreamer-commit <40-hex-sha>
 dreamer load-check /path/to/run --upstream /path/to/dreamerv3 --python /path/to/env/bin/python
+dreamer evaluate /path/to/run --upstream /path/to/dreamerv3 --python /path/to/env/bin/python --output ./eval-run --steps 10000
 ```
 
 `doctor` works on incomplete runs and exits with status 0 for complete
@@ -65,6 +67,24 @@ The worker reconstructs the observation and action spaces through upstream's
 `make_agent()`, resolves the checkpoint's `latest` snapshot, and asks
 `elements.Checkpoint` to load only `agent`. Environment packages and assets are
 therefore still required for the configured task.
+
+## Experimental evaluation-only execution
+
+After `load-check` succeeds, run a bounded evaluation into a new directory:
+
+```sh
+dreamer evaluate /path/to/run \
+  --upstream /path/to/dreamerv3 \
+  --python /path/to/dreamerv3-env/bin/python \
+  --output /path/to/evaluations/run-001 \
+  --steps 10000 --envs 1 --platform cpu
+```
+
+The output path must not exist, so prior results cannot be overwritten. This
+delegates policy execution, environments, checkpoint loading, and metrics to
+the pinned upstream implementation. It performs no training. CI verifies the
+orchestration with synthetic doubles; real checkpoint compatibility remains
+experimental until an integration fixture is tested and documented.
 
 ## Develop
 

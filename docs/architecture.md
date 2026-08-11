@@ -1,6 +1,6 @@
 # Architecture and compatibility decision (ADR-001)
 
-Status: accepted for v0.1, 2026-08-10.
+Status: accepted for v0.1 and amended for v0.2, 2026-08-10.
 
 ## Decision
 
@@ -15,6 +15,9 @@ clean pinned checkout, then launches `_load_worker.py` with an explicitly chosen
 Python environment. This isolates heavyweight JAX/upstream imports from normal
 inspection. The worker uses upstream `make_agent()` and `elements.Checkpoint`
 rather than interpreting pickle or parameter-tree formats itself.
+`evaluate` extends the same subprocess boundary and calls upstream
+`embodied.run.eval_only` with a bounded step count and a new output directory.
+It does not add a second policy loop or environment implementation.
 
 The first adapter is **experimental** and pinned to upstream commit
 `e3f02248693a79dc8b0ebd62c93683888ddaccfe`. We depend on that source revision
@@ -49,6 +52,6 @@ suites (Crafter, Atari, DMC, and others) have different compatibility surfaces.
 
 ## Extension seams
 
-Later evaluation, reconstruction/imagination video, HTML reporting, and latent
-extraction (`h`, `z`, logits, predictions) should be separate services over a
-verified loader. They are explicitly outside v0.1.
+Reconstruction/imagination video, HTML reporting, and latent extraction (`h`,
+`z`, logits, predictions) should be separate services over a verified loader.
+They remain outside v0.1.

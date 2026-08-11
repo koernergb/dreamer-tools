@@ -75,3 +75,25 @@ def test_load_check_command(monkeypatch: object, capsys: object) -> None:
     )
     assert main(["load-check", "/run", "--upstream", "/upstream"]) == 0
     assert "✓ loaded" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
+def test_evaluate_command(monkeypatch: object, capsys: object) -> None:
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        cli,
+        "evaluate",
+        lambda *args, **kwargs: LoadCheckResult(True, "evaluated"),
+    )
+    code = main(
+        [
+            "evaluate",
+            "/run",
+            "--upstream",
+            "/upstream",
+            "--output",
+            "/evaluation",
+            "--steps",
+            "100",
+        ]
+    )
+    assert code == 0
+    assert "✓ evaluated" in capsys.readouterr().out  # type: ignore[attr-defined]

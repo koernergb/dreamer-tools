@@ -83,6 +83,80 @@ def check_load(
     return LoadCheckResult(True, "Checkpoint agent state loaded successfully", output)
 
 
+def evaluate(
+    run_path: Path,
+    upstream_path: Path,
+    output_path: Path,
+    *,
+    steps: int,
+    envs: int = 1,
+    platform: str | None = None,
+    python: Path | None = None,
+    timeout: int = 1800,
+) -> LoadCheckResult:
+    """Run upstream's evaluation-only loop in an isolated process."""
+    if steps <= 0 or envs <= 0 or timeout <= 0:
+        return LoadCheckResult(
+            False, "Steps, envs, and timeout must be greater than zero"
+        )
+    if platform not in (None, "cpu", "cuda", "tpu"):
+        return LoadCheckResult(False, f"Unsupported JAX platform: {platform}")
+    run = discover(run_path, dreamer_commit=PINNED_COMMIT)
+    if not run.config_path or not run.checkpoint:
+        return LoadCheckResult(
+            False,
+            "Run is missing a checkpoint or readable configuration",
+            "Run `dreamer doctor PATH` and resolve its errors first.",
+        )
+    upstream = upstream_path.expanduser().resolve()
+    validation = _validate_upstream(upstream)
+    if validation:
+        return validation
+    executable = (python or Path(sys.executable)).expanduser().resolve()
+    if not executable.is_file():
+        return LoadCheckResult(False, f"Python executable not found: {executable}")
+    output = output_path.expanduser().resolve()
+    if output.exists():
+        return LoadCheckResult(
+            False,
+            f"Evaluation output already exists: {output}",
+            "Choose a new output directory; existing results are never overwritten.",
+        )
+    worker = Path(__file__).with_name("_eval_worker.py")
+    command = [
+        str(executable),
+        str(worker),
+        str(upstream),
+        str(run.root),
+        str(run.config_path),
+        str(run.checkpoint),
+        str(output),
+        str(steps),
+        str(envs),
+        platform or "",
+    ]
+    try:
+        completed = _run(command, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return LoadCheckResult(
+            False,
+            f"Evaluation exceeded {timeout} seconds",
+            f"Partial output may remain at {output}.",
+        )
+    except OSError as exc:
+        return LoadCheckResult(False, "Could not start evaluation", str(exc))
+    detail = "\n".join(
+        part.strip() for part in (completed.stdout, completed.stderr) if part.strip()
+    )
+    if completed.returncode:
+        return LoadCheckResult(
+            False,
+            "Upstream evaluation failed",
+            detail or f"Evaluator exited with status {completed.returncode}",
+        )
+    return LoadCheckResult(True, f"Evaluation completed: {output}", detail)
+
+
 def _validate_upstream(upstream: Path) -> LoadCheckResult | None:
     if not (upstream / "dreamerv3" / "main.py").is_file():
         return LoadCheckResult(
