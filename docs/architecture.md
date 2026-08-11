@@ -10,12 +10,18 @@ diagnostics, and the versioned manifest. The CLI is a presentation layer.
 Loading and future extraction code must consume the discovery result through
 the adapter boundary rather than importing internals from the CLI or manifest.
 
+The first loading seam is `load-check`. Its small parent process validates a
+clean pinned checkout, then launches `_load_worker.py` with an explicitly chosen
+Python environment. This isolates heavyweight JAX/upstream imports from normal
+inspection. The worker uses upstream `make_agent()` and `elements.Checkpoint`
+rather than interpreting pickle or parameter-tree formats itself.
+
 The first adapter is **experimental** and pinned to upstream commit
 `e3f02248693a79dc8b0ebd62c93683888ddaccfe`. We depend on that source revision
-at runtime only when real loading is added; we do not vendor it or reproduce its
-model code. A future loader should check out/install that exact revision in an
-isolated environment, construct the same observation/action spaces from the
-saved config, then call upstream's checkpoint API.
+only for the opt-in load check; we do not vendor it or reproduce its model code.
+The user supplies a separate environment containing that checkout's declared
+dependencies. The worker constructs the same observation/action spaces from
+the saved config and calls upstream's checkpoint API.
 
 ## Evidence and consequences
 
@@ -28,6 +34,10 @@ and evaluation loads the `agent` key in
 [`embodied/run/eval_only.py`](https://github.com/danijar/dreamerv3/blob/e3f02248693a79dc8b0ebd62c93683888ddaccfe/embodied/run/eval_only.py).
 Parallel execution uses component paths beneath `ckpt`, so discovery accepts
 both shapes without interpreting checkpoint bytes.
+The upstream `elements`
+[`Checkpoint`](https://github.com/danijar/elements/blob/main/elements/checkpoint.py)
+stores a `latest` pointer to a complete snapshot marked by `done`; `load-check`
+resolves that container before requesting the `agent` key.
 
 Upstream warns in its
 [`README`](https://github.com/danijar/dreamerv3/blob/e3f02248693a79dc8b0ebd62c93683888ddaccfe/README.md)
@@ -42,4 +52,3 @@ suites (Crafter, Atari, DMC, and others) have different compatibility surfaces.
 Later evaluation, reconstruction/imagination video, HTML reporting, and latent
 extraction (`h`, `z`, logits, predictions) should be separate services over a
 verified loader. They are explicitly outside v0.1.
-

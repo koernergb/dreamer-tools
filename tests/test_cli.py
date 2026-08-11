@@ -2,8 +2,10 @@ from pathlib import Path
 
 import yaml
 
+import dreamer_tools.cli as cli
 from dreamer_tools.adapters.dreamerv3 import PINNED_COMMIT
 from dreamer_tools.cli import main
+from dreamer_tools.loader import LoadCheckResult
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -63,3 +65,13 @@ def test_manifest_command(tmp_path: Path, capsys: object) -> None:
 def test_help(capsys: object) -> None:
     assert main([]) == 0
     assert "doctor" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
+def test_load_check_command(monkeypatch: object, capsys: object) -> None:
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        cli,
+        "check_load",
+        lambda *args, **kwargs: LoadCheckResult(True, "loaded"),
+    )
+    assert main(["load-check", "/run", "--upstream", "/upstream"]) == 0
+    assert "✓ loaded" in capsys.readouterr().out  # type: ignore[attr-defined]

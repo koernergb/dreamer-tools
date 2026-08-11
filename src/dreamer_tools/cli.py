@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from dreamer_tools.adapters.dreamerv3 import discover
+from dreamer_tools.loader import check_load
 from dreamer_tools.manifest import build_manifest, dump_manifest
 from dreamer_tools.model import Discovery, Severity
 
@@ -18,6 +19,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.command:
         parser.print_help()
         return 0
+    if args.command == "load-check":
+        result = check_load(
+            Path(args.path),
+            Path(args.upstream),
+            python=Path(args.python) if args.python else None,
+            timeout=args.timeout,
+        )
+        print(("✓ " if result.ok else "✗ ") + result.message)
+        if result.detail:
+            print(result.detail)
+        return 0 if result.ok else 2
     try:
         versions = _parse_versions(args.environment_version)
     except ValueError as exc:
@@ -44,6 +56,15 @@ def _parser() -> argparse.ArgumentParser:
         prog="dreamer", description="Inspect trained DreamerV3 runs"
     )
     subparsers = parser.add_subparsers(dest="command")
+    load = subparsers.add_parser(
+        "load-check", help="smoke-test agent restore with a pinned upstream checkout"
+    )
+    load.add_argument("path")
+    load.add_argument(
+        "--upstream", required=True, help="clean local DreamerV3 checkout"
+    )
+    load.add_argument("--python", help="Python executable with upstream dependencies")
+    load.add_argument("--timeout", type=int, default=300, metavar="SECONDS")
     for name, help_text in (
         ("doctor", "diagnose a run directory"),
         ("manifest", "write a portable run manifest"),
