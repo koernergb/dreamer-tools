@@ -1,9 +1,11 @@
 from pathlib import Path
 
+import numpy as np
 import yaml
 
 import dreamer_tools.cli as cli
 from dreamer_tools.adapters.dreamerv3 import PINNED_COMMIT
+from dreamer_tools.bundle import write_bundle
 from dreamer_tools.cli import main
 from dreamer_tools.loader import LoadCheckResult
 
@@ -120,3 +122,48 @@ def test_report_command(tmp_path: Path, capsys: object) -> None:
     assert code == 0
     assert output.is_file()
     assert "Wrote report" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
+def test_bundle_info_and_video_commands(tmp_path: Path, capsys: object) -> None:
+    bundle = tmp_path / "extract.npz"
+    frames = np.zeros((2, 16, 16, 3), np.uint8)
+    write_bundle(bundle, {"reconstruction/image": frames}, metadata={})
+    assert main(["bundle-info", str(bundle)]) == 0
+    assert '"schema_version": 1' in capsys.readouterr().out  # type: ignore[attr-defined]
+    output = tmp_path / "videos"
+    assert (
+        main(
+            [
+                "export-videos",
+                str(bundle),
+                "--output-dir",
+                str(output),
+                "--fps",
+                "5",
+            ]
+        )
+        == 0
+    )
+    assert (output / "reconstruction-image.mp4").is_file()
+
+
+def test_extract_command(monkeypatch: object, capsys: object) -> None:
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        cli,
+        "extract",
+        lambda *args, **kwargs: LoadCheckResult(True, "extracted"),
+    )
+    code = main(
+        [
+            "extract",
+            "/run",
+            "--upstream",
+            "/upstream",
+            "--output",
+            "/extract.npz",
+            "--steps",
+            "8",
+        ]
+    )
+    assert code == 0
+    assert "✓ extracted" in capsys.readouterr().out  # type: ignore[attr-defined]

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dreamer-tools"
-version = "0.2.0"
+version = "0.3.0"
 description = "Inspect and describe trained DreamerV3 world-model runs"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -28,6 +28,11 @@ dev = [
   "pytest-cov>=6.0",
   "ruff>=0.8",
   "types-PyYAML>=6.0",
+]
+media = [
+  "imageio>=2.36,<3",
+  "imageio-ffmpeg>=0.5,<1",
+  "numpy>=1.26,<3",
 ]
 
 [project.scripts]

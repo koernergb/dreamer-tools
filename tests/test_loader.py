@@ -1,10 +1,15 @@
+import hashlib
+import inspect
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 from types import SimpleNamespace
 
 import dreamer_tools._eval_worker as eval_worker
+import dreamer_tools._extract_worker as extract_worker
 import dreamer_tools._load_worker as worker
+import dreamer_tools.adapters.instrument as instrumentation
 import dreamer_tools.loader as loader
 from dreamer_tools._eval_worker import _prepare_config
 from dreamer_tools._load_worker import _resolve_snapshot
@@ -122,6 +127,38 @@ def test_evaluate_refuses_invalid_options(tmp_path: Path) -> None:
     assert not loader.evaluate(
         FIXTURE, upstream, tmp_path / "out", steps=1, platform="metal"
     ).ok
+
+
+def test_extract_runs_pinned_worker(tmp_path: Path, monkeypatch: object) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(
+        command: list[str], *, timeout: int
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        if "rev-parse" in command:
+            return subprocess.CompletedProcess(command, 0, PINNED_COMMIT, "")
+        if "status" in command:
+            return subprocess.CompletedProcess(command, 0, "", "")
+        return subprocess.CompletedProcess(command, 0, "extracted", "")
+
+    monkeypatch.setattr(loader, "_run", fake_run)  # type: ignore[attr-defined]
+    result = loader.extract(
+        FIXTURE,
+        _upstream(tmp_path),
+        tmp_path / "extract.npz",
+        steps=8,
+        platform="cpu",
+        python=Path(sys.executable),
+    )
+    assert result.ok
+    assert calls[-1][-2:] == ["8", "cpu"]
+
+
+def test_extract_validates_options(tmp_path: Path) -> None:
+    upstream = _upstream(tmp_path)
+    assert not loader.extract(FIXTURE, upstream, tmp_path / "x.npz", steps=0).ok
+    assert not loader.extract(FIXTURE, upstream, tmp_path / "x.bin", steps=1).ok
 
 
 def test_prepare_evaluation_config(tmp_path: Path) -> None:
@@ -341,3 +378,142 @@ def test_eval_worker_reports_usage_and_import_errors(
     )
     assert eval_worker.main([str(tmp_path)] * 5 + ["1", "1", "cpu"]) == 1
     assert "ModuleNotFoundError" in capsys.readouterr().err  # type: ignore[attr-defined]
+
+
+def test_extract_worker_reports_usage_and_import_errors(
+    tmp_path: Path, monkeypatch: object, capsys: object
+) -> None:
+    assert extract_worker.main([]) == 2
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        extract_worker.importlib,
+        "import_module",
+        lambda name: (_ for _ in ()).throw(ModuleNotFoundError(name)),
+    )
+    assert extract_worker.main([str(tmp_path)] * 5 + ["1", "cpu"]) == 1
+    assert "ModuleNotFoundError" in capsys.readouterr().err  # type: ignore[attr-defined]
+
+
+def test_policy_instrumentation_is_source_hash_guarded(monkeypatch: object) -> None:
+    class FakeAgent:
+        def policy(self: object) -> tuple[None, None, dict[str, object]]:
+            out: dict[str, object] = {}
+            carry = None
+            return carry, None, out
+
+    source = textwrap.dedent(inspect.getsource(FakeAgent.policy))
+    digest = hashlib.sha256(source.encode()).hexdigest()
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        instrumentation, "POLICY_SOURCE_SHA256", digest
+    )
+    original = FakeAgent.policy
+    instrumentation.instrument_policy(SimpleNamespace(Agent=FakeAgent))  # type: ignore[arg-type]
+    assert FakeAgent.policy is not original
+
+
+def test_extract_worker_writes_bundle(
+    tmp_path: Path, monkeypatch: object, capsys: object
+) -> None:
+    import numpy as np
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("synthetic")
+    snapshot = tmp_path / "ckpt" / "one"
+    snapshot.mkdir(parents=True)
+    (snapshot / "done").touch()
+    output = tmp_path / "extract.npz"
+
+    class FakeConfig(dict[str, object]):
+        def __init__(self, values: dict[str, object]) -> None:
+            super().__init__(values)
+            self.jax = values["jax"]
+
+    class FakeCheckpoint:
+        agent: object
+
+        def load(self, path: Path, keys: list[str]) -> None:
+            assert path == snapshot
+
+    class FakeAgent:
+        def init_policy(self, size: int) -> None:
+            return None
+
+        def policy(
+            self, carry: object, obs: dict[str, object], mode: str
+        ) -> tuple[object, dict[str, np.ndarray], dict[str, np.ndarray]]:
+            return (
+                carry,
+                {"action": np.zeros((1,), np.int32)},
+                {
+                    "extract/h": np.zeros((1, 4), np.float32),
+                    "extract/z": np.zeros((1, 2, 3), np.float32),
+                    "extract/reconstruction/image": np.zeros(
+                        (1, 16, 16, 3), np.float32
+                    ),
+                },
+            )
+
+    class FakeDriver:
+        def __init__(self, factories: object, parallel: bool) -> None:
+            self.closed = False
+
+        def reset(self, init_policy: object) -> None:
+            pass
+
+        def __call__(self, policy: object, steps: int) -> None:
+            policy(  # type: ignore[operator]
+                None,
+                {
+                    "image": np.zeros((1, 16, 16, 3), np.uint8),
+                    "is_first": np.ones((1,), bool),
+                },
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    config_data: dict[str, object] = {
+        "jax": {"platform": "cpu"},
+        "agent": {"imag_length": 5},
+        "task": "dummy_disc",
+        "seed": 1,
+    }
+
+    class FakeYaml:
+        def __init__(self, typ: str) -> None:
+            pass
+
+        def load(self, text: str) -> dict[str, object]:
+            return config_data
+
+    modules = {
+        "numpy": np,
+        "elements": SimpleNamespace(Config=FakeConfig, Checkpoint=FakeCheckpoint),
+        "ruamel.yaml": SimpleNamespace(YAML=FakeYaml),
+        "embodied": SimpleNamespace(Driver=FakeDriver),
+        "dreamerv3.main": SimpleNamespace(
+            make_agent=lambda config: FakeAgent(),
+            make_env=lambda config, index: object(),
+        ),
+        "dreamerv3.agent": SimpleNamespace(Agent=FakeAgent),
+    }
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        extract_worker.importlib, "import_module", lambda name: modules[name]
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        extract_worker, "instrument_policy", lambda module: None
+    )
+    code = extract_worker.main(
+        [
+            str(tmp_path),
+            str(tmp_path),
+            str(config_path),
+            str(snapshot),
+            str(output),
+            "1",
+            "cpu",
+        ]
+    )
+    assert code == 0
+    assert output.is_file()
+    assert output.with_suffix(".json").is_file()
+    assert "Wrote extraction bundle" in capsys.readouterr().out  # type: ignore[attr-defined]

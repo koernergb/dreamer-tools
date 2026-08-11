@@ -1,6 +1,6 @@
 # Architecture and compatibility decision (ADR-001)
 
-Status: accepted for v0.1 and amended for v0.2, 2026-08-10.
+Status: accepted for v0.1 and amended through v0.3, 2026-08-10.
 
 ## Decision
 
@@ -18,6 +18,14 @@ rather than interpreting pickle or parameter-tree formats itself.
 `evaluate` extends the same subprocess boundary and calls upstream
 `embodied.run.eval_only` with a bounded step count and a new output directory.
 It does not add a second policy loop or environment implementation.
+
+Extraction uses a source-hash-guarded AST instrumentation adapter on the pinned
+upstream `Agent.policy` method before upstream's JAX wrapper compiles it. The
+adapter only adds outputs already computed by the policy plus direct calls to
+the pinned RSSM prior, decoder, reward, and continuation heads. It never edits
+the checkout. If upstream source differs byte-for-byte, extraction stops. The
+result is a pickle-free NPZ plus a versioned JSON sidecar; media rendering only
+consumes that portable boundary.
 
 The first adapter is **experimental** and pinned to upstream commit
 `e3f02248693a79dc8b0ebd62c93683888ddaccfe`. We depend on that source revision

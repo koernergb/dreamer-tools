@@ -13,7 +13,7 @@ initially supported upstream revision is experimental.
 ```sh
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install -e '.[dev]'
+python -m pip install -e '.[dev,media]'
 ```
 
 ## Use
@@ -25,6 +25,9 @@ dreamer manifest /path/to/run --dreamer-commit <40-hex-sha>
 dreamer report /path/to/run --output report.html
 dreamer load-check /path/to/run --upstream /path/to/dreamerv3 --python /path/to/env/bin/python
 dreamer evaluate /path/to/run --upstream /path/to/dreamerv3 --python /path/to/env/bin/python --output ./eval-run --steps 10000
+dreamer bundle-info extraction.npz
+dreamer extract /path/to/run --upstream /path/to/dreamerv3 --python /path/to/env/bin/python --output extraction.npz --steps 100
+dreamer export-videos extraction.npz --output-dir videos
 ```
 
 `doctor` works on incomplete runs and exits with status 0 for complete
@@ -86,6 +89,33 @@ delegates policy execution, environments, checkpoint loading, and metrics to
 the pinned upstream implementation. It performs no training. CI verifies the
 orchestration with synthetic doubles; real checkpoint compatibility remains
 experimental until an integration fixture is tested and documented.
+
+## Portable extraction bundles and videos
+
+Extraction bundles use compressed NPZ arrays plus a JSON sidecar with schema
+`dreamer-tools/extraction-bundle`, version 1. They never use pickle. Stable
+array names cover `h`, `z`, `prior_logits`, `posterior_logits`, reward and
+continuation predictions, and namespaced observation/reconstruction/imagination
+frames. Extraction instruments the exact pinned upstream policy before JAX
+compilation and refuses to run if that method's source hash changes. It does not
+patch files in the upstream checkout. Install the optional renderer and run:
+
+```sh
+python -m pip install 'dreamer-tools[media]'
+dreamer extract /path/to/run \
+  --upstream /path/to/dreamerv3 \
+  --python /path/to/dreamerv3-env/bin/python \
+  --output extraction.npz --steps 100 --platform cpu
+dreamer bundle-info extraction.npz
+dreamer export-videos extraction.npz --output-dir videos --fps 15
+dreamer report /path/to/run --bundle extraction.npz --video videos/imagination-image.mp4 --output report.html
+```
+
+Each extraction step records posterior `h`, `z`, posterior logits, the prior
+logits computed from that step's deterministic state, reward and continuation
+predictions, decoder reconstructions, and a policy-conditioned imagination of
+the configured `agent.imag_length`. Arrays retain their batch/time axes and the
+JSON sidecar records the task, seed, revision, rollout length, and horizon.
 
 ## Develop
 
