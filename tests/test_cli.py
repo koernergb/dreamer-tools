@@ -97,3 +97,26 @@ def test_evaluate_command(monkeypatch: object, capsys: object) -> None:
     )
     assert code == 0
     assert "✓ evaluated" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
+def test_report_command(tmp_path: Path, capsys: object) -> None:
+    output = tmp_path / "report.html"
+    code = main(
+        [
+            "report",
+            str(FIXTURES / "complete"),
+            "--output",
+            str(output),
+            "--dreamer-commit",
+            PINNED_COMMIT,
+            "--model-preset",
+            "size50m",
+            "--python-version",
+            "3.11",
+            "--environment-version",
+            "crafter=1.8.3",
+        ]
+    )
+    assert code == 0
+    assert output.is_file()
+    assert "Wrote report" in capsys.readouterr().out  # type: ignore[attr-defined]

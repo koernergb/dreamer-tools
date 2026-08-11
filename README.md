@@ -22,6 +22,7 @@ python -m pip install -e '.[dev]'
 dreamer doctor /path/to/run
 dreamer manifest /path/to/run --output dreamer-run.yaml
 dreamer manifest /path/to/run --dreamer-commit <40-hex-sha>
+dreamer report /path/to/run --output report.html
 dreamer load-check /path/to/run --upstream /path/to/dreamerv3 --python /path/to/env/bin/python
 dreamer evaluate /path/to/run --upstream /path/to/dreamerv3 --python /path/to/env/bin/python --output ./eval-run --steps 10000
 ```

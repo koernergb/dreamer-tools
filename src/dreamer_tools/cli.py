@@ -11,6 +11,7 @@ from dreamer_tools.adapters.dreamerv3 import discover
 from dreamer_tools.loader import check_load, evaluate
 from dreamer_tools.manifest import build_manifest, dump_manifest
 from dreamer_tools.model import Discovery, Severity
+from dreamer_tools.report import write_report
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -59,6 +60,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "doctor":
         _print_doctor(run)
         return int(run.severity)
+    if args.command == "report":
+        output = Path(args.output) if args.output else Path(args.path) / "report.html"
+        write_report(run, output)
+        print(f"Wrote report: {output}")
+        _print_summary(run)
+        return int(run.severity)
     output = Path(args.output) if args.output else Path(args.path) / "dreamer-run.yaml"
     dump_manifest(build_manifest(run), output)
     print(f"Wrote manifest: {output}")
@@ -94,6 +101,7 @@ def _parser() -> argparse.ArgumentParser:
     for name, help_text in (
         ("doctor", "diagnose a run directory"),
         ("manifest", "write a portable run manifest"),
+        ("report", "write a self-contained HTML run report"),
     ):
         command = subparsers.add_parser(name, help=help_text)
         command.add_argument("path")
@@ -113,7 +121,7 @@ def _parser() -> argparse.ArgumentParser:
             metavar="NAME=VERSION",
             help="repeatable environment package version",
         )
-        if name == "manifest":
+        if name in ("manifest", "report"):
             command.add_argument("-o", "--output")
     return parser
 
